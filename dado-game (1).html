@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DADO — Juego Multijugador</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ══════════════════════════════════════════════
+  // 🔥 FIREBASE CONFIG — reemplaza con tu proyecto
+  // ══════════════════════════════════════════════
+  const firebaseConfig = {
+    apiKey: "AIzaSyDemo-ReemplazaConTuProyecto",
+    authDomain: "dado-game.firebaseapp.com",
+    databaseURL: "https://dado-game-default-rtdb.firebaseio.com",
+    projectId: "dado-game",
+    storageBucket: "dado-game.appspot.com",
+    messagingSenderId: "000000000000",
+    appId: "1:000000000000:web:0000000000000000"
+  };
+
+  let app, db;
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+    window._firebaseDB = db;
+    window._firebaseSet = set;
+    window._firebaseGet = get;
+    window._firebaseRef = ref;
+    window._firebaseOnValue = onValue;
+    window._firebaseUpdate = update;
+    window._firebaseReady = true;
+  } catch(e) {
+    window._firebaseReady = false;
+    console.warn("Firebase no configurado — modo demo local activo");
+  }
+</script>
+
+<style>
+/* ═══════════════════════════════════════
+   CSS VARIABLES — TEMA
+═══════════════════════════════════════ */
+:root {
+  /* DARK */
+  --bg: #0f0f1a;
+  --bg2: #171728;
+  --surface: #1e1e32;
+  --surface2: #252540;
+  --border: rgba(255,255,255,0.08);
+  --text: #f0f0ff;
+  --text2: #9090c0;
+  --shadow: rgba(0,0,0,0.5);
+  --glass: rgba(255,255,255,0.04);
+
+  /* COLORES DADOS */
+  --d1: #ff4757; --d1s: #ff6b81;
+  --d2: #1e90ff; --d2s: #74b9ff;
+  --d3: #2ed573; --d3s: #7bed9f;
+  --d4: #ffa502; --d4s: #ffcc02;
+  --d5: #a55eea; --d5s: #cc8ff0;
+  --d6: #00d2d3; --d6s: #54d8d8;
+
+  /* UI */
+  --c1: #ff4757;
+  --c2: #1e90ff;
+  --c3: #2ed573;
+  --c4: #ffa502;
+  --c5: #a55eea;
+  --accent: #ff6b9d;
+  --accent2: #c44dff;
+  --btn-r: 50px;
+  --card-r: 24px;
+}
+
+[data-theme="light"] {
+  --bg: #f0f2ff;
+  --bg2: #e4e8ff;
+  --surface: #ffffff;
+  --surface2: #f5f5ff;
+  --border: rgba(0,0,0,0.08);
+  --text: #1a1a40;
+  --text2: #6060a0;
+  --shadow: rgba(100,100,200,0.15);
+  --glass: rgba(255,255,255,0.6);
+}
+
+/* ═══════════════ RESET & BASE ═══════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; }
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.4s, color 0.4s;
+}
+
+/* Animated BG blobs */
+.bg-blobs {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+}
+.blob {
+  position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.12;
+  animation: blobFloat 12s ease-in-out infinite alternate;
+}
+[data-theme="light"] .blob { opacity: 0.18; }
+.blob1 { width: 500px; height: 500px; background: var(--c5); top: -100px; left: -100px; animation-delay: 0s; }
+.blob2 { width: 400px; height: 400px; background: var(--c2); bottom: -50px; right: -80px; animation-delay: -4s; }
+.blob3 { width: 300px; height: 300px; background: var(--c1); top: 40%; left: 50%; animation-delay: -8s; }
+
+@keyframes blobFloat {
+  from { transform: translate(0,0) scale(1); }
+  to { transform: translate(40px, 30px) scale(1.15); }
+}
+
+/* ═══════════════ SCREENS ═══════════════ */
+.screen { display: none; min-height: 100vh; position: relative; z-index: 1; }
+.screen.active { display: flex; }
+
+/* ═══════════════ MENU ═══════════════ */
+#screen-menu {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px 40px;
+  gap: 0;
+}
+
+.logo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 10px;
+  animation: popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+.logo-dice-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.logo-die {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  animation: logoSpin 4s ease-in-out infinite;
+}
+.logo-die:nth-child(1) { background: linear-gradient(135deg,var(--d1),var(--d1s)); animation-delay: 0s; }
+.logo-die:nth-child(2) { background: linear-gradient(135deg,var(--d2),var(--d2s)); animation-delay: 0.3s; }
+.logo-die:nth-child(3) { background: linear-gradient(135deg,var(--d3),var(--d3s)); animation-delay: 0.6s; }
+
+@keyframes logoSpin {
+  0%,100% { transform: rotate(-5deg) scale(1); }
+  50% { transform: rotate(5deg) scale(1.1); }
+}
+
+.logo-pip { width: 8px; height: 8px; background: rgba(255,255,255,0.9); border-radius: 50%; }
+
+.menu-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(72px, 20vw, 120px);
+  line-height: 0.95;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 50%, var(--c2) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -2px;
+  filter: drop-shadow(0 4px 20px rgba(196,77,255,0.3));
+}
+
+.menu-tagline {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-top: 6px;
+  margin-bottom: 40px;
+}
+
+.menu-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+  animation: slideUp 0.6s 0.15s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.7) translateY(-20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════ BUTTONS ═══════════════ */
+.btn {
+  font-family: 'Nunito', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 16px 28px;
+  border: none;
+  border-radius: var(--btn-r);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.15s;
+  border-radius: inherit;
+}
+
+.btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.btn:active { transform: scale(0.95) !important; }
+.btn:active::after { background: rgba(0,0,0,0.1); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+.btn-local {
+  background: linear-gradient(135deg, #ff4757, #ff6b9d);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(255,71,87,0.4);
+}
+.btn-online {
+  background: linear-gradient(135deg, #1e90ff, #a55eea);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(30,144,255,0.35);
+}
+.btn-settings {
+  background: var(--surface);
+  color: var(--text2);
+  border: 2px solid var(--border);
+  box-shadow: 0 4px 20px var(--shadow);
+}
+.btn-ghost {
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid var(--border);
+}
+.btn-green {
+  background: linear-gradient(135deg, #2ed573, #1dd1a1);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(46,213,115,0.4);
+}
+.btn-purple {
+  background: linear-gradient(135deg, #a55eea, #c44dff);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(165,94,234,0.4);
+}
+.btn-orange {
+  background: linear-gradient(135deg, #ffa502, #ff7675);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(255,165,2,0.4);
+}
+.btn-sm {
+  font-size: 13px;
+  padding: 12px 20px;
+}
+.btn-icon {
+  width: 50px; height: 50px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+/* ═══════════════ ONLINE PANEL ═══════════════ */
+.panel {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 16px;
+  animation: slideUp 0.35s cubic-bezier(0.16,1,0.3,1) both;
+}
+.panel.show { display: flex; }
+
+.input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.input-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text2);
+  padding-left: 8px;
+}
+.input-field {
+  font-family: 'Nunito', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(255,107,157,0.15);
+}
+.input-field::placeholder { color: var(--text2); }
+
+.room-card {
+  background: linear-gradient(135deg, var(--c5), var(--accent2));
+  border-radius: 20px;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(165,94,234,0.35);
+}
+.room-card .rlabel { font-size: 11px; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin-bottom: 6px; }
+.room-card .rid { font-family: 'Fredoka One', cursive; font-size: 42px; letter-spacing: 0.15em; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+.room-card .rhelp { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+
+.divider-line {
+  display: flex; align-items: center; gap: 10px; color: var(--text2);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+}
+.divider-line::before, .divider-line::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+.status-toast {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  padding: 12px 16px;
+  border-radius: 12px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.3s;
+  background: transparent;
+}
+.status-toast.ok { background: rgba(46,213,115,0.15); color: #2ed573; }
+.status-toast.err { background: rgba(255,71,87,0.15); color: #ff4757; }
+.status-toast.info { background: rgba(30,144,255,0.15); color: #1e90ff; }
+
+/* ═══════════════ SETTINGS MODAL ═══════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+.modal-overlay.show { opacity: 1; pointer-events: all; }
+
+.modal-sheet {
+  background: var(--surface);
+  border-radius: 28px 28px 0 0;
+  padding: 28px 24px 40px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  transform: translateY(100%);
+  transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.modal-overlay.show .modal-sheet { transform: translateY(0); }
+
+.sheet-handle {
+  width: 40px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 0 auto 24px;
+}
+
+.sheet-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 28px;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+.settings-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  background: var(--surface2);
+  border-radius: 16px;
+  gap: 12px;
+}
+.setting-info { display: flex; align-items: center; gap: 12px; }
+.setting-icon { font-size: 22px; width: 36px; text-align: center; }
+.setting-text { font-size: 15px; font-weight: 700; color: var(--text); }
+.setting-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+/* Toggle */
+.toggle {
+  width: 52px; height: 28px;
+  background: var(--border);
+  border-radius: 14px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.3s;
+  flex-shrink: 0;
+  border: none;
+}
+.toggle.on { background: linear-gradient(135deg, var(--c3), var(--c2)); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 22px; height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  top: 3px; left: 3px;
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.toggle.on::after { transform: translateX(24px); }
+
+/* Theme buttons */
+.theme-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.theme-btn {
+  padding: 16px;
+  border-radius: 16px;
+  border: 2px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-family: 'Nunito', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+.theme-btn.active { border-color: var(--accent); background: rgba(255,107,157,0.1); }
+.theme-btn:hover { transform: translateY(-2px); }
+.theme-preview { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.preview-dark { background: #0f0f1a; }
+.preview-light { background: #f0f2ff; }
+
+/* ═══════════════ GAME SCREEN ═══════════════ */
+#screen-game {
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 16px 24px;
+  gap: 0;
+  min-height: 100vh;
+}
+
+.game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 700px;
+  margin-bottom: 16px;
+}
+
+.game-logo {
+  font-family: 'Fredoka One', cursive;
+  font-size: 28px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.turn-pill {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 18px;
+  border-radius: 50px;
+  background: var(--surface);
+  color: var(--text2);
+  letter-spacing: 0.05em;
+  transition: all 0.3s;
+  border: 2px solid var(--border);
+}
+.turn-pill.glow {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 20px rgba(255,107,157,0.4);
+}
+
+/* PLAYERS */
+.players-area {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  max-width: 700px;
+  margin-bottom: 16px;
+}
+
+.player-card {
+  flex: 1;
+  background: var(--surface);
+  border-radius: var(--card-r);
+  padding: 18px 16px;
+  border: 2px solid var(--border);
+  transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+  position: relative;
+  overflow: hidden;
+}
+.player-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.35s;
+  pointer-events: none;
+}
+.player-card.p1-active::before { background: radial-gradient(ellipse at top, rgba(255,71,87,0.1) 0%, transparent 70%); opacity: 1; }
+.player-card.p2-active::before { background: radial-gradient(ellipse at top, rgba(30,144,255,0.1) 0%, transparent 70%); opacity: 1; }
+
+.p-tag {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900;
+  color: #fff;
+  flex-shrink: 0;
+}
+.p1 .p-tag { background: linear-gradient(135deg, var(--d1), var(--d1s)); }
+.p2 .p-tag { background: linear-gradient(135deg, var(--d2), var(--d2s)); }
+
+.player-card.p1-active { border-color: var(--d1); box-shadow: 0 0 0 1px var(--d1), 0 8px 30px rgba(255,71,87,0.2); }
+.player-card.p2-active { border-color: var(--d2); box-shadow: 0 0 0 1px var(--d2), 0 8px 30px rgba(30,144,255,0.2); }
+
+.pname {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(16px, 4vw, 22px);
+  margin-bottom: 2px;
+  margin-right: 32px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcount {
+  font-size: 11px; font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 14px;
+}
+
+.tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.tile {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(18px,4vw,26px);
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  color: var(--text);
+  transition: all 0.5s cubic-bezier(0.16,1,0.3,1);
+  position: relative;
+  overflow: hidden;
+}
+
+.tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+  pointer-events: none;
+}
+
+.tile.t1 { --tc: var(--d1); }
+.tile.t2 { --tc: var(--d2); }
+.tile.t3 { --tc: var(--d3); }
+.tile.t4 { --tc: var(--d4); }
+.tile.t5 { --tc: var(--d5); }
+.tile.t6 { --tc: var(--d6); }
+
+.tile.active-highlight {
+  border-color: var(--tc);
+  box-shadow: 0 0 14px rgba(255,255,255,0.1), inset 0 0 10px rgba(255,255,255,0.05);
+}
+
+.tile.eliminated {
+  transform: scale(0.5);
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+  pointer-events: none;
+}
+
+.tile.flash-anim {
+  animation: tileFlashOut 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+@keyframes tileFlashOut {
+  0%  { transform: scale(1); background: var(--tc); border-color: var(--tc); box-shadow: 0 0 30px var(--tc); color: #fff; }
+  40% { transform: scale(1.35); }
+  100%{ transform: scale(0.3); opacity: 0; background: var(--tc); }
+}
+
+/* DICE AREA */
+.dice-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.dice-hint {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  text-align: center;
+  min-height: 20px;
+  transition: color 0.3s;
+}
+
+.die-stage {
+  width: 130px; height: 130px;
+  position: relative;
+  cursor: pointer;
+  filter: drop-shadow(0 12px 40px rgba(0,0,0,0.4));
+  transition: filter 0.3s;
+}
+
+.die-face {
+  width: 130px; height: 130px;
+  border-radius: 30px;
+  background: var(--d1);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.08s, border-radius 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.die-face::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 60%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.die-face::after {
+  content: '';
+  position: absolute;
+  bottom: -20px; left: -20px; right: -20px;
+  height: 40px;
+  background: rgba(0,0,0,0.15);
+  filter: blur(10px);
+  border-radius: 50%;
+}
+
+.pips-wrap {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 76%; height: 76%;
+  position: relative; z-index: 1;
+}
+
+.pip { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+.pip-dot {
+  width: 28%; aspect-ratio: 1; border-radius: 50%;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+/* FULLSCREEN DIE */
+.die-fullscreen-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+}
+.die-fullscreen-overlay.show { opacity: 1; pointer-events: all; }
+
+.die-fs-bg {
+  position: absolute; inset: 0;
+  transition: background 0.08s;
+}
+
+.die-fs-face {
+  width: min(55vw, 280px);
+  height: min(55vw, 280px);
+  border-radius: 28%;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; z-index: 1;
+  transition: background 0.08s;
+  box-shadow: 0 20px 80px rgba(0,0,0,0.5), 0 0 0 6px rgba(255,255,255,0.15);
+  animation: dieBounce 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+@keyframes dieBounce {
+  from { transform: scale(0.5) rotate(-20deg); }
+  to { transform: scale(1) rotate(0deg); }
+}
+
+.die-fs-face::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 60%);
+  border-radius: inherit;
+}
+
+.die-fs-pips {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  grid-template-rows: repeat(3,1fr);
+  width: 72%; height: 72%;
+  position: relative; z-index: 1;
+}
+
+.die-fs-pip { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+.die-fs-dot {
+  width: 26%; aspect-ratio: 1; border-radius: 50%;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* No tile warning */
+.notile-banner {
+  background: rgba(255,165,2,0.15);
+  border: 2px solid rgba(255,165,2,0.3);
+  border-radius: 14px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--d4);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: all 0.3s;
+  min-height: 44px;
+}
+.notile-banner.show { opacity: 1; transform: translateY(0); }
+
+/* ═══════════════ RESULT OVERLAY ═══════════════ */
+.result-overlay {
+  position: fixed; inset: 0; z-index: 150;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+  padding: 20px;
+}
+.result-overlay.show { opacity: 1; pointer-events: all; }
+
+.result-card {
+  background: var(--surface);
+  border-radius: 28px;
+  padding: 36px 32px;
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+  transform: scale(0.8);
+  transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  border: 2px solid var(--border);
+}
+.result-overlay.show .result-card { transform: scale(1); }
+
+.result-die-mini {
+  width: 80px; height: 80px;
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+.result-die-pips {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  grid-template-rows: repeat(3,1fr);
+  width: 72%; height: 72%;
+}
+.result-pip { width:100%;height:100%;display:flex;align-items:center;justify-content:center; }
+.result-dot { width:28%;aspect-ratio:1;border-radius:50%;background:rgba(255,255,255,0.95); }
+
+.result-num {
+  font-family: 'Fredoka One', cursive;
+  font-size: 72px; line-height: 1;
+  margin-bottom: 8px;
+}
+.result-msg {
+  font-size: 14px; font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 24px;
+  line-height: 1.4;
+}
+
+/* ═══════════════ WINNER ═══════════════ */
+#screen-winner {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 30px 20px;
+}
+
+.winner-emoji { font-size: 80px; animation: wiggle 0.8s ease-in-out infinite alternate; }
+@keyframes wiggle { from { transform: rotate(-10deg) scale(1); } to { transform: rotate(10deg) scale(1.1); } }
+
+.winner-label {
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--text2);
+}
+.winner-name {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(52px,14vw,100px);
+  line-height: 0.95;
+  background: linear-gradient(135deg, var(--accent), var(--accent2), var(--c2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+}
+.winner-sub {
+  font-size: 14px; font-weight: 700; color: var(--text2);
+}
+
+/* ═══════════════ CONFETTI ═══════════════ */
+.conf {
+  position: fixed; top: -16px; pointer-events: none; z-index: 999;
+  animation: confFall linear forwards;
+  border-radius: 3px;
+}
+@keyframes confFall {
+  0%   { opacity:1; transform: translateY(0) rotate(0deg) scale(1); }
+  80%  { opacity:1; }
+  100% { opacity:0; transform: translateY(105vh) rotate(720deg) scale(0.5); }
+}
+
+/* ═══════════════ RESPONSIVE ═══════════════ */
+@media (max-width: 480px) {
+  .players-area { flex-direction: row; gap: 10px; }
+  .player-card { padding: 14px 12px; }
+  .pname { font-size: 15px; }
+  .tiles-grid { gap: 5px; }
+  .tile { border-radius: 10px; font-size: 16px; }
+  .die-stage { width: 110px; height: 110px; }
+  .die-face { width: 110px; height: 110px; border-radius: 26px; }
+}
+
+@media (max-width: 360px) {
+  .player-card { padding: 12px 10px; }
+  .tiles-grid { gap: 4px; }
+  .tile { font-size: 14px; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.back-btn {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 700;
+  color: var(--text2); background: none; border: none; cursor: pointer;
+  padding: 8px; border-radius: 8px; transition: color 0.2s;
+}
+.back-btn:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- BG -->
+<div class="bg-blobs">
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MENU
+════════════════════════════════════════ -->
+<div id="screen-menu" class="screen active">
+  <div class="logo-wrap">
+    <div class="logo-dice-row">
+      <div class="logo-die"><div class="logo-pip"></div></div>
+      <div class="logo-die">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <div class="logo-pip"></div><div class="logo-pip"></div>
+        </div>
+      </div>
+      <div class="logo-die">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div class="logo-pip"></div><div class="logo-pip"></div><div class="logo-pip"></div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-title">DADO</div>
+    <div class="menu-tagline">Juego de Dados · 2 Jugadores</div>
+  </div>
+
+  <div class="menu-btns">
+    <button class="btn btn-local" onclick="startLocal()">🎲 Jugar Local</button>
+    <button class="btn btn-online" onclick="togglePanel('online-panel')">🌐 Modo Online</button>
+    <button class="btn btn-settings" onclick="openSettings()">⚙️ Configuración</button>
+  </div>
+
+  <!-- Online Panel -->
+  <div class="panel" id="online-panel">
+    <div class="input-wrap">
+      <div class="input-label">Tu nombre</div>
+      <input class="input-field" id="online-name" placeholder="Ej: Jugador Pro" maxlength="14">
+    </div>
+    <button class="btn btn-purple" onclick="createRoom()">✨ Crear Sala</button>
+    <div id="room-created-display" style="display:none">
+      <div class="room-card">
+        <div class="rlabel">ID de Sala — Comparte con tu amigo</div>
+        <div class="rid" id="room-id-text">—</div>
+        <div class="rhelp">⏳ Esperando jugador…</div>
+      </div>
+    </div>
+    <div class="divider-line">o únete</div>
+    <div class="input-wrap">
+      <div class="input-label">ID de sala</div>
+      <input class="input-field" id="join-room-id" placeholder="ABC123" maxlength="6"
+        style="text-transform:uppercase;letter-spacing:0.3em;font-size:18px;text-align:center">
+    </div>
+    <button class="btn btn-green" onclick="joinRoom()">🚀 Unirse a Sala</button>
+    <div class="status-toast" id="online-status"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     GAME
+════════════════════════════════════════ -->
+<div id="screen-game" class="screen">
+  <div class="game-topbar">
+    <button class="back-btn" onclick="backToMenu()">← Menú</button>
+    <div class="game-logo">DADO</div>
+    <div class="turn-pill" id="turn-pill">Turno P1</div>
+  </div>
+
+  <div class="players-area">
+    <div class="player-card p1" id="card-p1">
+      <div class="p-tag">P1</div>
+      <div class="pname" id="pname-1">Jugador 1</div>
+      <div class="pcount">Casillas: <span id="pcount-1">6</span>/6</div>
+      <div class="tiles-grid" id="tiles-p1"></div>
+    </div>
+    <div class="player-card p2" id="card-p2">
+      <div class="p-tag">P2</div>
+      <div class="pname" id="pname-2">Jugador 2</div>
+      <div class="pcount">Casillas: <span id="pcount-2">6</span>/6</div>
+      <div class="tiles-grid" id="tiles-p2"></div>
+    </div>
+  </div>
+
+  <div class="dice-center">
+    <div class="dice-hint" id="dice-hint">Toca el dado para lanzar</div>
+
+    <div class="die-stage" onclick="rollDice()" id="die-stage">
+      <div class="die-face" id="die-face">
+        <div class="pips-wrap" id="pips-wrap"></div>
+      </div>
+    </div>
+
+    <div class="notile-banner" id="notile-banner">⚠️ No tienes esa casilla — turno perdido</div>
+
+    <button class="btn btn-local" id="roll-btn" onclick="rollDice()" style="width:100%;max-width:260px">
+      🎲 Lanzar Dado
+    </button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     WINNER
+════════════════════════════════════════ -->
+<div id="screen-winner" class="screen">
+  <div class="winner-emoji">🏆</div>
+  <div class="winner-label">¡Ganador!</div>
+  <div class="winner-name" id="winner-name">Jugador 1</div>
+  <div class="winner-sub">eliminó todas sus casillas primero</div>
+  <div style="height:10px"></div>
+  <button class="btn btn-local" onclick="backToMenu()">🔄 Jugar de Nuevo</button>
+  <button class="btn btn-ghost" onclick="backToMenu()" style="margin-top:8px">← Menú Principal</button>
+</div>
+
+<!-- ════════════════════════════════════════
+     SETTINGS MODAL
+════════════════════════════════════════ -->
+<div class="modal-overlay" id="settings-modal" onclick="closeSettingsOutside(event)">
+  <div class="modal-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">⚙️ Configuración</div>
+
+    <div class="settings-group">
+      <div class="settings-group-label">🎨 Tema Visual</div>
+      <div class="theme-btns">
+        <button class="theme-btn" id="theme-dark" onclick="setTheme('dark')">
+          <div class="theme-preview preview-dark">🌙</div>
+          Oscuro
+        </button>
+        <button class="theme-btn" id="theme-light" onclick="setTheme('light')">
+          <div class="theme-preview preview-light">☀️</div>
+          Claro
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-label">🎵 Audio</div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-icon">🎵</div>
+          <div>
+            <div class="setting-text">Música de fondo</div>
+            <div class="setting-sub">Música durante el juego</div>
+          </div>
+        </div>
+        <button class="toggle" id="toggle-music" onclick="toggleSetting('music')"></button>
+      </div>
+      <div class="setting-row" style="margin-top:4px">
+        <div class="setting-info">
+          <div class="setting-icon">🔊</div>
+          <div>
+            <div class="setting-text">Efectos de sonido</div>
+            <div class="setting-sub">Sonidos del dado y casillas</div>
+          </div>
+        </div>
+        <button class="toggle on" id="toggle-sfx" onclick="toggleSetting('sfx')"></button>
+      </div>
+      <div class="setting-row" style="margin-top:4px">
+        <div class="setting-info">
+          <div class="setting-icon">📳</div>
+          <div>
+            <div class="setting-text">Vibración</div>
+            <div class="setting-sub">Feedback háptico (móvil)</div>
+          </div>
+        </div>
+        <button class="toggle on" id="toggle-vibra" onclick="toggleSetting('vibra')"></button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-label">🎵 Música Personalizada</div>
+      <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:12px">
+        <div class="setting-info">
+          <div class="setting-icon">📁</div>
+          <div>
+            <div class="setting-text">Cargar archivo de música</div>
+            <div class="setting-sub" id="music-file-name">Ningún archivo cargado</div>
+          </div>
+        </div>
+        <input type="file" id="music-file-input" accept="audio/*" style="display:none" onchange="loadCustomMusic(event)">
+        <button class="btn btn-orange btn-sm" style="width:100%" onclick="document.getElementById('music-file-input').click()">
+          📂 Seleccionar Archivo
+        </button>
+      </div>
+    </div>
+
+    <button class="btn btn-local" style="width:100%;margin-top:8px" onclick="closeSettings()">✅ Listo</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     DIE FULLSCREEN OVERLAY
+════════════════════════════════════════ -->
+<div class="die-fullscreen-overlay" id="die-fs-overlay">
+  <div class="die-fs-bg" id="die-fs-bg"></div>
+  <div class="die-fs-face" id="die-fs-face">
+    <div class="die-fs-pips" id="die-fs-pips"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     RESULT OVERLAY
+════════════════════════════════════════ -->
+<div class="result-overlay" id="result-overlay">
+  <div class="result-card">
+    <div class="result-die-mini" id="result-die-mini">
+      <div class="result-die-pips" id="result-die-pips"></div>
+    </div>
+    <div class="result-num" id="result-num">3</div>
+    <div class="result-msg" id="result-msg">Eliminó la casilla 3</div>
+    <button class="btn btn-local" style="width:100%" onclick="closeResult()">Continuar →</button>
+  </div>
+</div>
+
+<!-- AUDIO -->
+<audio id="bgMusic" loop></audio>
+
+<script>
+// ════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════
+const cfg = {
+  theme: 'dark',
+  music: false,
+  sfx: true,
+  vibra: true
+};
+
+function loadCfg() {
+  try {
+    const s = JSON.parse(localStorage.getItem('dadoCfg') || '{}');
+    Object.assign(cfg, s);
+  } catch(e) {}
+  applyTheme();
+  updateToggles();
+}
+
+function saveCfg() {
+  localStorage.setItem('dadoCfg', JSON.stringify(cfg));
+}
+
+function setTheme(t) {
+  cfg.theme = t;
+  applyTheme();
+  saveCfg();
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', cfg.theme);
+  document.getElementById('theme-dark').classList.toggle('active', cfg.theme === 'dark');
+  document.getElementById('theme-light').classList.toggle('active', cfg.theme === 'light');
+}
+
+function toggleSetting(key) {
+  cfg[key] = !cfg[key];
+  updateToggles();
+  saveCfg();
+  if (key === 'music') {
+    cfg.music ? playBgMusic() : pauseBgMusic();
+  }
+}
+
+function updateToggles() {
+  ['music','sfx','vibra'].forEach(k => {
+    document.getElementById('toggle-' + k).classList.toggle('on', cfg[k]);
+  });
+}
+
+function openSettings() { document.getElementById('settings-modal').classList.add('show'); }
+function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
+function closeSettingsOutside(e) {
+  if (e.target === document.getElementById('settings-modal')) closeSettings();
+}
+
+// ════════════════════════════════════════
+// AUDIO
+// ════════════════════════════════════════
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+function playTone(freq, type, duration, volume = 0.4) {
+  if (!cfg.sfx) return;
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+
+function sfxRoll() {
+  if (!cfg.sfx) return;
+  [200, 260, 320, 400].forEach((f, i) => {
+    setTimeout(() => playTone(f, 'square', 0.08, 0.2), i * 40);
+  });
+}
+
+function sfxSuccess() {
+  if (!cfg.sfx) return;
+  [523, 659, 784, 1047].forEach((f, i) => {
+    setTimeout(() => playTone(f, 'sine', 0.2, 0.3), i * 80);
+  });
+}
+
+function sfxError() {
+  if (!cfg.sfx) return;
+  playTone(150, 'sawtooth', 0.3, 0.3);
+  setTimeout(() => playTone(120, 'sawtooth', 0.25, 0.3), 120);
+}
+
+function sfxDiceClick() {
+  if (!cfg.sfx) return;
+  playTone(600, 'sine', 0.05, 0.15);
+}
+
+function sfxWin() {
+  if (!cfg.sfx) return;
+  [523,659,784,880,1047,1175].forEach((f,i) => {
+    setTimeout(() => playTone(f, 'sine', 0.3, 0.4), i * 100);
+  });
+}
+
+// BG Music
+function playBgMusic() {
+  const el = document.getElementById('bgMusic');
+  if (el.src) el.play().catch(() => {});
+}
+function pauseBgMusic() {
+  document.getElementById('bgMusic').pause();
+}
+
+function loadCustomMusic(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const el = document.getElementById('bgMusic');
+  el.src = url;
+  document.getElementById('music-file-name').textContent = file.name;
+  if (cfg.music) el.play().catch(() => {});
+}
+
+// ════════════════════════════════════════
+// VIBRATION
+// ════════════════════════════════════════
+function vibrate(pattern) {
+  if (!cfg.vibra) return;
+  if ('vibrate' in navigator) navigator.vibrate(pattern);
+}
+
+// ════════════════════════════════════════
+// DICE PIPS
+// ════════════════════════════════════════
+const PIPS = {
+  1: [[1,1]],
+  2: [[0,0],[2,2]],
+  3: [[0,0],[1,1],[2,2]],
+  4: [[0,0],[0,2],[2,0],[2,2]],
+  5: [[0,0],[0,2],[1,1],[2,0],[2,2]],
+  6: [[0,0],[0,2],[1,0],[1,2],[2,0],[2,2]]
+};
+
+const DICE_COLORS = {
+  1: ['#ff4757','#ff6b81'],
+  2: ['#1e90ff','#74b9ff'],
+  3: ['#2ed573','#7bed9f'],
+  4: ['#ffa502','#ffd32a'],
+  5: ['#a55eea','#cc8ff0'],
+  6: ['#00d2d3','#54d8d8']
+};
+
+function buildPips(n, container, dotClass) {
+  container.innerHTML = '';
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const pip = document.createElement('div');
+      pip.className = container.className.includes('fs') ? 'die-fs-pip' :
+                      container.className.includes('result') ? 'result-pip' : 'pip';
+      if ((PIPS[n]||[]).some(([pr,pc]) => pr===r && pc===c)) {
+        const dot = document.createElement('div');
+        dot.className = dotClass;
+        pip.appendChild(dot);
+      }
+      container.appendChild(pip);
+    }
+  }
+}
+
+function setDieFace(n) {
+  const [c1, c2] = DICE_COLORS[n];
+  document.getElementById('die-face').style.background = `linear-gradient(135deg,${c1},${c2})`;
+  buildPips(n, document.getElementById('pips-wrap'), 'pip-dot');
+}
+
+// ════════════════════════════════════════
+// GAME STATE
+// ════════════════════════════════════════
+let gameMode = 'local';
+let currentPlayer = 0;
+let rolling = false;
+let players = [
+  { name: 'Jugador 1', tiles: [] },
+  { name: 'Jugador 2', tiles: [] }
+];
+
+// ════════════════════════════════════════
+// INIT / TILES
+// ════════════════════════════════════════
+function initTiles() {
+  for (let p = 0; p < 2; p++) {
+    players[p].tiles = [1,2,3,4,5,6];
+    const cont = document.getElementById('tiles-p' + (p+1));
+    cont.innerHTML = '';
+    for (let n = 1; n <= 6; n++) {
+      const t = document.createElement('div');
+      t.className = `tile t${n}`;
+      t.id = `tile-p${p+1}-${n}`;
+      t.textContent = n;
+      cont.appendChild(t);
+    }
+    document.getElementById('pcount-' + (p+1)).textContent = 6;
+  }
+}
+
+function refreshAllTiles() {
+  for (let p = 0; p < 2; p++) {
+    for (let n = 1; n <= 6; n++) {
+      const t = document.getElementById(`tile-p${p+1}-${n}`);
+      if (!t) continue;
+      t.classList.toggle('eliminated', !players[p].tiles.includes(n));
+      t.classList.remove('active-highlight');
+    }
+    document.getElementById('pcount-' + (p+1)).textContent = players[p].tiles.length;
+  }
+}
+
+function updateActiveUI() {
+  const n1 = players[0].name, n2 = players[1].name;
+  document.getElementById('pname-1').textContent = n1;
+  document.getElementById('pname-2').textContent = n2;
+
+  document.getElementById('card-p1').classList.toggle('p1-active', currentPlayer === 0);
+  document.getElementById('card-p2').classList.toggle('p2-active', currentPlayer === 1);
+  document.getElementById('card-p1').classList.toggle('p2-active', false);
+  document.getElementById('card-p2').classList.toggle('p1-active', false);
+
+  const pill = document.getElementById('turn-pill');
+  pill.textContent = `Turno — ${players[currentPlayer].name}`;
+  pill.classList.add('glow');
+  setTimeout(() => pill.classList.remove('glow'), 1000);
+
+  document.getElementById('notile-banner').classList.remove('show');
+  document.getElementById('dice-hint').textContent =
+    `Turno de ${players[currentPlayer].name} · ¡Lanza!`;
+
+  if (gameMode === 'online') {
+    const myTurn = currentPlayer === iAmPlayer;
+    document.getElementById('roll-btn').disabled = !myTurn;
+    document.getElementById('die-stage').style.cursor = myTurn ? 'pointer' : 'not-allowed';
+    document.getElementById('dice-hint').textContent = myTurn ?
+      `¡Tu turno! Lanza el dado` : `Esperando a ${players[currentPlayer].name}…`;
+  } else {
+    document.getElementById('roll-btn').disabled = false;
+    document.getElementById('die-stage').style.cursor = 'pointer';
+  }
+}
+
+// ════════════════════════════════════════
+// LOCAL GAME
+// ════════════════════════════════════════
+function startLocal() {
+  gameMode = 'local';
+  players[0].name = 'Jugador 1';
+  players[1].name = 'Jugador 2';
+  currentPlayer = 0;
+  rolling = false;
+  startGame();
+}
+
+function startGame() {
+  initTiles();
+  setDieFace(1);
+  updateActiveUI();
+  showScreen('screen-game');
+  if (cfg.music) playBgMusic();
+}
+
+// ════════════════════════════════════════
+// ROLL
+// ════════════════════════════════════════
+async function rollDice() {
+  if (rolling) return;
+  if (gameMode === 'online' && currentPlayer !== iAmPlayer) return;
+
+  rolling = true;
+  document.getElementById('roll-btn').disabled = true;
+  sfxDiceClick();
+  vibrate([30]);
+
+  // Show fullscreen die
+  const fsOverlay = document.getElementById('die-fs-overlay');
+  const fsBg = document.getElementById('die-fs-bg');
+  const fsFace = document.getElementById('die-fs-face');
+  const fsPips = document.getElementById('die-fs-pips');
+  fsOverlay.classList.add('show');
+
+  let delay = 55;
+  const count = 20 + Math.floor(Math.random() * 8);
+
+  for (let i = 0; i < count; i++) {
+    const face = Math.ceil(Math.random() * 6);
+    const [c1, c2] = DICE_COLORS[face];
+    fsBg.style.background = `linear-gradient(135deg,${c1}cc,${c2}aa)`;
+    fsFace.style.background = `linear-gradient(135deg,${c1},${c2})`;
+    buildPips(face, fsPips, 'die-fs-dot');
+    if (i % 2 === 0) sfxRoll();
+    await sleep(delay);
+    if (i > count * 0.55) delay += 16;
+  }
+
+  const result = Math.ceil(Math.random() * 6);
+  const [c1, c2] = DICE_COLORS[result];
+  fsBg.style.background = `linear-gradient(135deg,${c1}cc,${c2}aa)`;
+  fsFace.style.background = `linear-gradient(135deg,${c1},${c2})`;
+  buildPips(result, fsPips, 'die-fs-dot');
+
+  vibrate([80]);
+  await sleep(600);
+  fsOverlay.classList.remove('show');
+  await sleep(200);
+
+  // Update small die too
+  setDieFace(result);
+  await processRoll(result);
+  rolling = false;
+}
+
+async function processRoll(result) {
+  const p = currentPlayer;
+  const tileIdx = players[p].tiles.indexOf(result);
+
+  if (tileIdx !== -1) {
+    // Eliminate tile
+    players[p].tiles.splice(tileIdx, 1);
+    document.getElementById('pcount-' + (p+1)).textContent = players[p].tiles.length;
+
+    const tile = document.getElementById(`tile-p${p+1}-${result}`);
+    tile.classList.add('flash-anim');
+    sfxSuccess();
+    vibrate([50, 30, 50]);
+
+    setTimeout(() => {
+      tile.classList.remove('flash-anim');
+      tile.classList.add('eliminated');
+    }, 580);
+
+    await sleep(300);
+
+    if (players[p].tiles.length === 0) {
+      await sleep(400);
+      if (gameMode === 'online') await syncOnlineState(result);
+      showWinner(p);
+      return;
+    }
+
+    showResultCard(result, `✅ ${players[p].name} eliminó la casilla ${result}`, true);
+  } else {
+    sfxError();
+    vibrate([100, 50, 100, 50, 100]);
+    document.getElementById('notile-banner').classList.add('show');
+    await sleep(300);
+    showResultCard(result, `❌ ${players[p].name} ya eliminó esa casilla`, false);
+  }
+
+  if (gameMode === 'online') await syncOnlineState(result);
+}
+
+function showResultCard(num, msg, isGood) {
+  const [c1, c2] = DICE_COLORS[num];
+  const mini = document.getElementById('result-die-mini');
+  mini.style.background = `linear-gradient(135deg,${c1},${c2})`;
+  mini.style.boxShadow = `0 8px 30px ${c1}66`;
+  buildPips(num, document.getElementById('result-die-pips'), 'result-dot');
+  document.getElementById('result-num').textContent = num;
+  document.getElementById('result-num').style.color = c1;
+  document.getElementById('result-msg').textContent = msg;
+  document.getElementById('result-overlay').classList.add('show');
+}
+
+function closeResult() {
+  document.getElementById('result-overlay').classList.remove('show');
+  currentPlayer = (currentPlayer + 1) % 2;
+  updateActiveUI();
+  if (gameMode === 'online' && currentPlayer !== iAmPlayer) startPolling();
+}
+
+function showWinner(p) {
+  sfxWin();
+  vibrate([100,50,100,50,200]);
+  pauseBgMusic();
+  document.getElementById('winner-name').textContent = players[p].name;
+  spawnConfetti();
+  showScreen('screen-winner');
+  stopPolling();
+}
+
+function spawnConfetti() {
+  const colors = Object.values(DICE_COLORS).map(([c]) => c);
+  for (let i = 0; i < 100; i++) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'conf';
+      el.style.cssText = `
+        left:${Math.random()*100}vw;
+        width:${6+Math.random()*10}px;
+        height:${6+Math.random()*10}px;
+        background:${colors[Math.floor(Math.random()*colors.length)]};
+        border-radius:${Math.random()>0.5?'50%':'3px'};
+        animation-duration:${2.5+Math.random()*2}s;
+        animation-delay:${Math.random()*0.5}s;
+      `;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 5000);
+    }, i * 25);
+  }
+}
+
+// ════════════════════════════════════════
+// FIREBASE / ONLINE
+// ════════════════════════════════════════
+let onlineRole = null;
+let myRoomId = null;
+let iAmPlayer = 0;
+let pollInterval = null;
+let fbUnsub = null;
+
+function genRoomId() {
+  return Math.random().toString(36).substr(2,6).toUpperCase();
+}
+
+async function fbSet(path, data) {
+  if (window._firebaseReady && window._firebaseDB) {
+    const r = window._firebaseRef(window._firebaseDB, path);
+    await window._firebaseSet(r, data);
+    return true;
+  }
+  // Fallback: localStorage + BroadcastChannel
+  localStorage.setItem('dado_' + path, JSON.stringify(data));
+  try { new BroadcastChannel('dado').postMessage({ path, data }); } catch(e) {}
+  return true;
+}
+
+async function fbGet(path) {
+  if (window._firebaseReady && window._firebaseDB) {
+    const r = window._firebaseRef(window._firebaseDB, path);
+    const snap = await window._firebaseGet(r);
+    return snap.exists() ? snap.val() : null;
+  }
+  const d = localStorage.getItem('dado_' + path);
+  return d ? JSON.parse(d) : null;
+}
+
+function fbListen(path, cb) {
+  if (window._firebaseReady && window._firebaseDB) {
+    const r = window._firebaseRef(window._firebaseDB, path);
+    const unsub = window._firebaseOnValue(r, snap => cb(snap.exists() ? snap.val() : null));
+    return unsub;
+  }
+  // LocalStorage polling fallback
+  const iv = setInterval(() => {
+    const d = localStorage.getItem('dado_' + path);
+    cb(d ? JSON.parse(d) : null);
+  }, 1500);
+  return () => clearInterval(iv);
+}
+
+async function createRoom() {
+  const name = document.getElementById('online-name').value.trim() || 'Jugador 1';
+  const roomId = genRoomId();
+  myRoomId = roomId;
+  onlineRole = 'host';
+  iAmPlayer = 0;
+
+  setOnlineStatus('Creando sala…', 'info');
+
+  const state = {
+    host: name, guest: null,
+    tiles: [[1,2,3,4,5,6],[1,2,3,4,5,6]],
+    turn: 0, lastRoll: null, lastMover: -1,
+    status: 'waiting', ts: Date.now()
+  };
+
+  await fbSet('rooms/' + roomId, state);
+  players[0].name = name;
+  players[1].name = 'Jugador 2';
+
+  document.getElementById('room-created-display').style.display = 'block';
+  document.getElementById('room-id-text').textContent = roomId;
+  setOnlineStatus('✅ Sala creada · Esperando oponente…', 'ok');
+
+  // Listen for guest joining
+  fbUnsub = fbListen('rooms/' + roomId, (s) => {
+    if (s && s.guest && s.status === 'playing') {
+      if (fbUnsub) fbUnsub();
+      players[1].name = s.guest;
+      gameMode = 'online';
+      currentPlayer = 0;
+      setOnlineStatus('¡' + s.guest + ' se unió! Iniciando…', 'ok');
+      setTimeout(() => startGame(), 800);
+    }
+  });
+}
+
+async function joinRoom() {
+  const name = document.getElementById('online-name').value.trim() || 'Jugador 2';
+  const roomId = document.getElementById('join-room-id').value.trim().toUpperCase();
+  if (!roomId || roomId.length < 4) { setOnlineStatus('❌ ID de sala inválido', 'err'); sfxError(); return; }
+
+  setOnlineStatus('Buscando sala…', 'info');
+  const state = await fbGet('rooms/' + roomId);
+
+  if (!state) { setOnlineStatus('❌ Sala no encontrada', 'err'); sfxError(); vibrate([100,50,100]); return; }
+  if (state.status !== 'waiting') { setOnlineStatus('❌ La sala ya está en juego', 'err'); sfxError(); return; }
+
+  myRoomId = roomId;
+  onlineRole = 'guest';
+  iAmPlayer = 1;
+
+  state.guest = name;
+  state.status = 'playing';
+  await fbSet('rooms/' + roomId, state);
+
+  players[0].name = state.host;
+  players[1].name = name;
+  gameMode = 'online';
+  currentPlayer = 0;
+  startGame();
+  startPolling();
+}
+
+function startPolling() {
+  stopPolling();
+  fbUnsub = fbListen('rooms/' + myRoomId, async (state) => {
+    if (!state) return;
+    if (state.turn === iAmPlayer && state.lastMover === 1 - iAmPlayer && state.lastRoll !== null) {
+      stopPolling();
+
+      // Apply opponent tiles
+      players[0].tiles = [...(state.tiles[0] || [])];
+      players[1].tiles = [...(state.tiles[1] || [])];
+      refreshAllTiles();
+
+      currentPlayer = state.turn;
+
+      // Show their roll result
+      const oppIdx = 1 - iAmPlayer;
+      const roll = state.lastRoll;
+      const hadTile = !players[oppIdx].tiles.includes(roll) || state.tiles[oppIdx].includes(roll);
+      showResultCard(roll, `${players[oppIdx].name} sacó un ${roll}`, hadTile);
+      updateActiveUI();
+
+      // Check win from their side
+      if (players[0].tiles.length === 0) { showWinner(0); return; }
+      if (players[1].tiles.length === 0) { showWinner(1); return; }
+    }
+  });
+}
+
+function stopPolling() {
+  if (fbUnsub) { fbUnsub(); fbUnsub = null; }
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+}
+
+async function syncOnlineState(roll) {
+  if (!myRoomId) return;
+  await fbSet('rooms/' + myRoomId, {
+    host: players[0].name,
+    guest: players[1].name,
+    tiles: [players[0].tiles.slice(), players[1].tiles.slice()],
+    turn: (currentPlayer + 1) % 2,
+    lastRoll: roll,
+    lastMover: currentPlayer,
+    status: (players[0].tiles.length === 0 || players[1].tiles.length === 0) ? 'done' : 'playing',
+    ts: Date.now()
+  });
+}
+
+function setOnlineStatus(msg, cls) {
+  const el = document.getElementById('online-status');
+  el.textContent = msg;
+  el.className = 'status-toast' + (cls ? ' ' + cls : '');
+}
+
+// ════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════
+function togglePanel(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('show');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function backToMenu() {
+  stopPolling();
+  gameMode = 'local';
+  rolling = false;
+  pauseBgMusic();
+  document.getElementById('online-panel').classList.remove('show');
+  document.getElementById('room-created-display').style.display = 'none';
+  document.getElementById('online-name').value = '';
+  document.getElementById('join-room-id').value = '';
+  document.getElementById('online-status').textContent = '';
+  document.getElementById('online-status').className = 'status-toast';
+  document.getElementById('result-overlay').classList.remove('show');
+  document.getElementById('die-fs-overlay').classList.remove('show');
+  showScreen('screen-menu');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════
+loadCfg();
+setDieFace(1);
+// Unlock audio on first tap
+document.addEventListener('touchstart', () => {
+  try { getAudioCtx().resume(); } catch(e) {}
+}, { once: true });
+document.addEventListener('click', () => {
+  try { getAudioCtx().resume(); } catch(e) {}
+}, { once: true });
+</script>
+</body>
+</html>
